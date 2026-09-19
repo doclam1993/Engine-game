@@ -1,0 +1,247 @@
+import { EntityLogicData } from './logic';
+import { AtmosphereData, PostProcessingData } from './atmosphere';
+import { TerrainConfig, FoliageLayer } from './terrain';
+import { HUDConfig } from './hud';
+
+export * from './logic';
+export * from './atmosphere';
+export * from './terrain';
+export * from './hud';
+
+export type ParticlePreset =
+  | 'fire'
+  | 'smoke'
+  | 'sparks'
+  | 'rain'
+  | 'snow'
+  | 'cosmic_dust'
+  | 'explosion';
+
+export interface ParticleEmitterData {
+  enabled: boolean;
+  preset: ParticlePreset;
+  rate: number;
+  maxParticles: number;
+  size: number;
+  speed: number;
+  color: string;
+  colorEnd?: string;
+  lifetime: number;
+  spread: number;
+  gravity: number;
+  loop: boolean;
+  burstCount?: number;
+}
+
+export type GizmoMode = 'translate' | 'rotate' | 'scale';
+export type GizmoSpace = 'world' | 'local';
+export type RenderMode = 'shaded' | 'wireframe' | 'normals';
+
+export interface TransformData {
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number }; // In degrees for UI
+  scale: { x: number; y: number; z: number };
+}
+
+export type TexturePreset = 'none' | 'grid' | 'brushed' | 'pebbles' | 'diamond' | 'carbon';
+
+export interface MaterialData {
+  color: string;
+  roughness: number;
+  metalness: number;
+  wireframe: boolean;
+  opacity: number;
+  transparent: boolean;
+  emissive?: string;
+  emissiveIntensity?: number;
+  normalScale?: number;
+  hasNormalMap?: boolean;
+  hasRoughnessMap?: boolean;
+  texturePreset?: TexturePreset;
+  customNormalMapUrl?: string;
+  customRoughnessMapUrl?: string;
+  mapUrl?: string;
+  repeatU?: number;
+  repeatV?: number;
+}
+
+export interface LightData {
+  color: string;
+  intensity: number;
+  distance?: number;
+}
+
+export type RigidbodyType = 'dynamic' | 'static' | 'kinematic';
+export type ColliderShapeType = 'auto' | 'box' | 'sphere' | 'capsule' | 'trimesh' | 'cylinder';
+
+export interface RigidbodyData {
+  enabled: boolean;
+  type: RigidbodyType;
+  mass: number;
+  restitution: number; // Bounciness [0..1]
+  friction: number; // [0..1]
+  linearDamping?: number;
+  angularDamping?: number;
+  lockRotations?: boolean;
+}
+
+export interface ColliderData {
+  shape: ColliderShapeType;
+  isSensor?: boolean;
+  size?: { x: number; y: number; z: number };
+  radius?: number;
+  height?: number;
+}
+
+export interface CharacterControllerData {
+  enabled: boolean;
+  mode: 'thirdPerson' | 'firstPerson';
+  speed: number; // in m/s
+  jumpForce: number; // impulse force
+  isGrounded?: boolean;
+  cameraDistance?: number; // Distance behind player
+  cameraHeight?: number;    // Height above player
+  cameraOffsetX?: number;   // Lateral offset (e.g. shoulder camera)
+  cameraLerpSpeed?: number; // Follow smoothness
+}
+
+export interface VehicleControllerData {
+  enabled: boolean;
+  engineForce: number; // Max acceleration power
+  maxSpeed: number; // Max speed in km/h or m/s
+  brakeForce: number; // Braking deceleration
+  steerAngle: number; // Steering angle in degrees (e.g. 30 deg)
+  suspensionStiffness: number; // Spring stiffness
+  suspensionDamping: number; // Damper factor
+  suspensionRestLength: number; // Rest height off ground
+  gripFriction: number; // Tire grip vs drift factor (0.1 = ice drift, 1.0 = high grip)
+  cameraDistance: number; // Distance behind vehicle
+  cameraHeight: number; // Height above vehicle
+  currentSpeedKmH?: number; // Runtime computed speed
+}
+
+export interface ScriptData {
+  enabled: boolean;
+  code?: string;
+}
+
+export interface PhysicsNodeData {
+  rigidbody?: RigidbodyData;
+  collider?: ColliderData;
+  characterController?: CharacterControllerData;
+  vehicleController?: VehicleControllerData;
+}
+
+export interface ModelInfo {
+  format: 'gltf' | 'glb';
+  vertexCount: number;
+  triangleCount: number;
+  meshCount: number;
+  fileSize?: string;
+  originalName?: string;
+}
+
+export interface SceneNode {
+  id: string; // Three.js UUID & ECS Entity ID
+  name: string;
+  type: 'mesh' | 'light' | 'camera' | 'group' | 'helper';
+  subType?:
+    | 'cube'
+    | 'sphere'
+    | 'cylinder'
+    | 'plane'
+    | 'torus'
+    | 'cone'
+    | 'player'
+    | 'directional'
+    | 'point'
+    | 'spot'
+    | 'ambient'
+    | 'model'
+    | 'particles'
+    | 'vehicle';
+  visible: boolean;
+  castShadow: boolean;
+  receiveShadow: boolean;
+  transform: TransformData;
+  material?: MaterialData;
+  light?: LightData;
+  physics?: PhysicsNodeData;
+  logic?: EntityLogicData;
+  particles?: ParticleEmitterData;
+  childrenCount?: number;
+  modelInfo?: ModelInfo;
+}
+
+export interface EngineStats {
+  fps: number;
+  triangles: number;
+  drawCalls: number;
+  objectsCount: number;
+  physicsBodiesCount?: number;
+}
+
+export interface EngineEvents {
+  onSelectionChange: (node: SceneNode | null) => void;
+  onHierarchyChange: (nodes: SceneNode[]) => void;
+  onTransformChange: (node: SceneNode) => void;
+  onStatsUpdate: (stats: EngineStats) => void;
+  onPlayStateChange: (isPlaying: boolean) => void;
+  onModelImportSuccess?: (name: string, info: ModelInfo) => void;
+  onModelImportError?: (error: string) => void;
+}
+
+export interface WorkPlaneConfig {
+  gridVisible: boolean;
+  axesVisible: boolean;
+  shadowPlaneVisible: boolean;
+  gridSize: number;
+  gridDivisions: number;
+  snapUnit: number;
+  height: number;
+}
+
+export const DEFAULT_WORK_PLANE_CONFIG: WorkPlaneConfig = {
+  gridVisible: true,
+  axesVisible: true,
+  shadowPlaneVisible: true,
+  gridSize: 40,
+  gridDivisions: 40,
+  snapUnit: 0.5,
+  height: 0,
+};
+
+export interface SceneExportData {
+  version: string;
+  generator: string;
+  timestamp: string;
+  projectName?: string;
+  atmosphere?: AtmosphereData;
+  postProcessing?: PostProcessingData;
+  terrain?: {
+    config: TerrainConfig;
+    heightmap?: number[];
+    foliageLayers?: FoliageLayer[];
+  };
+  hud?: HUDConfig;
+  environment: {
+    backgroundColor: string;
+    ambientIntensity: number;
+    sunIntensity: number;
+    sunPosition: { x: number; y: number; z: number };
+  };
+  nodes: {
+    id?: string;
+    name: string;
+    type: 'mesh' | 'light' | 'camera' | 'group' | 'helper';
+    subType?: string;
+    transform: TransformData;
+    material?: MaterialData;
+    light?: LightData;
+    physics?: PhysicsNodeData;
+    logic?: EntityLogicData;
+    visible: boolean;
+    castShadow: boolean;
+    receiveShadow: boolean;
+  }[];
+}
