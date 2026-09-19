@@ -160,6 +160,7 @@ const ALL_AVAILABLE_NODES: Array<{
   { type: 'EmitParticles', label: 'EmitParticles', desc: 'Émettre des particules (Feu, Fumée, Pluie, Neige...)', category: 'action' },
   { type: 'ExplosionFX', label: 'ExplosionFX', desc: 'Explosion spectaculaire 3D avec secousse & son', category: 'action' },
   { type: 'StopParticles', label: 'StopParticles', desc: 'Arrêter l\'émission de particules', category: 'action' },
+  { type: 'ShootProjectile', label: 'ShootProjectile', desc: 'Tirer un projectile (Feu, Plasma, Laser) vers l\'avant', category: 'action' },
 
   // Navigation IA & PNJ
   { type: 'FollowTarget', label: 'FollowTarget (Poursuite)', desc: 'Chasse automatique du joueur / cible avec détection FOV', category: 'action' },

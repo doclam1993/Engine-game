@@ -27,6 +27,8 @@ export class LogicExecutor {
   private ecsWorld: ECSWorld;
   public particleManager?: ParticleManager;
   public animationManager?: AnimationManager;
+  public onPlaySkeletalAnimation?: (entityId: string, animationName: string) => void;
+  public onShootProjectile?: (entityId: string, prefabId: string, speed: number, damage: number) => void;
   private isRunning: boolean = false;
   private elapsedTime: number = 0;
 
@@ -709,6 +711,18 @@ export class LogicExecutor {
         break;
       }
 
+      case 'ShootProjectile': {
+        if (this.onShootProjectile) {
+          const prefabId = String(node.values.prefabId || 'Bullet');
+          const speed = Number(node.values.speed ?? 20);
+          const damage = Number(node.values.damage ?? 10);
+          this.onShootProjectile(entity.id, prefabId, speed, damage);
+          ScriptSandbox.addLog(`[Action] Tir de ${prefabId} par ${entity.id}`, 'log');
+        }
+        this.triggerNodeOutput(entity, graph, node.id, 'out_flow', context);
+        break;
+      }
+
       case 'SpawnPrefab': {
         SoundEngine.play('warp');
         ScriptSandbox.addLog(`[Spawn] Entité ${node.values.prefab || 'objet'} générée !`, 'log');
@@ -1173,8 +1187,12 @@ export class LogicExecutor {
             if (targetTrack) {
               this.animationManager.playTrack(targetTrack.id, 1);
               ScriptSandbox.addLog(`[Animation] Lecture trajectoire '${targetTrack.name}' sur ${targetEntity.id}`, 'log');
+            } else if (targetEntity.object3D?.userData.animations && this.onPlaySkeletalAnimation) {
+              // Try to play skeletal animation if no track was found
+              this.onPlaySkeletalAnimation(targetEntity.id, trackName);
+              ScriptSandbox.addLog(`[Animation] Lecture animation GLTF '${trackName || 'Default'}' sur ${targetEntity.id}`, 'log');
             } else {
-              ScriptSandbox.addLog(`[Animation] Aucune trajectoire trouvée pour ${targetEntity.id}`, 'warn');
+              ScriptSandbox.addLog(`[Animation] Aucune trajectoire ou animation GLTF trouvée pour ${targetEntity.id}`, 'warn');
             }
           }
         }

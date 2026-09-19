@@ -95,6 +95,7 @@ export type NodeType =
   | 'EmitParticles'
   | 'ExplosionFX'
   | 'StopParticles'
+  | 'ShootProjectile'
   // AI & NPC Navigation
   | 'FollowTarget'
   | 'PatrolWaypoints'

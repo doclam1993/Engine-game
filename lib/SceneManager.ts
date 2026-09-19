@@ -48,6 +48,7 @@ import { AtmosphereManager } from './atmosphere/AtmosphereManager';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { FoliagePainter } from './terrain/FoliagePainter';
 import { ParticleManager } from './vfx/ParticleManager';
+import { soundManager, SFXType } from './SoundManager';
 import { AnimationManager } from './animation/AnimationManager';
 
 export class SceneManager {
@@ -125,6 +126,15 @@ export class SceneManager {
 
   // Loaders
   private gltfLoader: GLTFLoader;
+  private mixers: Map<string, THREE.AnimationMixer> = new Map();
+  private activeProjectiles: Array<{
+    id: string;
+    mesh: THREE.Mesh;
+    direction: THREE.Vector3;
+    speed: number;
+    damage: number;
+    timer: number;
+  }> = [];
   private dracoLoader: DRACOLoader | null = null;
 
   constructor(container: HTMLElement, events: EngineEvents) {
@@ -141,6 +151,8 @@ export class SceneManager {
     this.physicsSystem = new PhysicsSystem(this.physicsManager);
     this.ecsWorld.addSystem(this.physicsSystem);
     this.logicExecutor = new LogicExecutor(this.ecsWorld);
+    this.logicExecutor.onPlaySkeletalAnimation = (id, name) => this.playSkeletalAnimation(id, name);
+    this.logicExecutor.onShootProjectile = (id, prefab, speed, damage) => this.shootProjectile(id, prefab, speed, damage);
 
     // Pre-initialize Rapier WebAssembly in background
     PhysicsManager.initRapier().catch((err) => {
@@ -1613,6 +1625,91 @@ export class SceneManager {
    * Import GLTF/GLB File with automatic DRACO decoding, normal recalculation,
    * bounding box centering, ground elevation, and shadow mapping.
    */
+  public playSkeletalAnimation(entityId: string, animationName: string): void {
+    const obj = this.objects.get(entityId);
+    if (!obj) return;
+
+    const animations = obj.userData.animations as THREE.AnimationClip[];
+    if (!animations || animations.length === 0) return;
+
+    // Find the requested animation or default to the first one
+    const clip = animations.find((a) => a.name === animationName) || animations[0];
+    
+    let mixer = this.mixers.get(entityId);
+    if (!mixer) {
+      mixer = new THREE.AnimationMixer(obj);
+      this.mixers.set(entityId, mixer);
+    }
+
+    mixer.stopAllAction();
+    const action = mixer.clipAction(clip);
+    action.reset();
+    action.setLoop(THREE.LoopRepeat, Infinity);
+    action.fadeIn(0.2);
+    action.play();
+  }
+
+  public stopSkeletalAnimations(entityId: string): void {
+    const mixer = this.mixers.get(entityId);
+    if (mixer) {
+      mixer.stopAllAction();
+    }
+  }
+
+  public shootProjectile(entityId: string, prefabId: string, speed: number, damage: number): void {
+    const parentObj = this.objects.get(entityId);
+    if (!parentObj) return;
+
+    const projectileId = `proj_${Date.now()}_${Math.random()}`;
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(parentObj.quaternion);
+    const startPos = parentObj.position.clone()
+      .add(forward.clone().multiplyScalar(1.2))
+      .add(new THREE.Vector3(0, 1.2, 0));
+
+    // Simple visual for "Fire" shot
+    const geo = new THREE.SphereGeometry(0.15, 8, 8);
+    const mat = new THREE.MeshBasicMaterial({ 
+      color: prefabId.toLowerCase().includes('fire') ? 0xff4400 : 0x00ccff,
+      transparent: true,
+      opacity: 0.9
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(startPos);
+    this.scene.add(mesh);
+
+    // Register
+    this.objects.set(projectileId, mesh);
+
+    // VFX
+    if (this.particleManager) {
+      this.particleManager.createOrUpdateEmitter(projectileId + '_trail', {
+        preset: 'fire',
+        rate: 30,
+        maxParticles: 100,
+        size: 0.3,
+        speed: 0.5,
+        lifetime: 0.4,
+        color: prefabId.toLowerCase().includes('fire') ? '#ffaa00' : '#00ffff',
+        spread: 0.2,
+        gravity: 0,
+        loop: true,
+        enabled: true
+      }, new THREE.Vector3(0, 0, 0), mesh);
+    }
+
+    this.activeProjectiles.push({
+      id: projectileId,
+      mesh,
+      direction: forward,
+      speed,
+      damage,
+      timer: 5.0 // 5 seconds max life
+    });
+
+    // Sound
+    soundManager.playSFX('laser');
+  }
+
   public async importGLTF(
     source: File | ArrayBuffer,
     fileName: string = 'Imported_Model'
@@ -1728,6 +1825,7 @@ export class SceneManager {
           modelWrapper.userData = {
             subType: 'model',
             modelInfo,
+            animations: gltf.animations,
           };
 
           this.registerObject(modelWrapper);
@@ -1771,6 +1869,7 @@ export class SceneManager {
 
     this.scene.remove(obj);
     this.objects.delete(id);
+    this.mixers.delete(id);
     this.originalMaterials.delete(id);
     this.ecsWorld.removeEntity(id);
 
@@ -2694,6 +2793,23 @@ export class SceneManager {
         this.selectedObject?.uuid || null,
         this.objects
       );
+    }
+
+    // Update skeletal animations
+    this.mixers.forEach((mixer) => mixer.update(dt));
+
+    // Update projectiles
+    for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+      const p = this.activeProjectiles[i];
+      p.timer -= dt;
+      p.mesh.position.add(p.direction.clone().multiplyScalar(p.speed * dt));
+
+      if (p.timer <= 0) {
+        this.scene.remove(p.mesh);
+        this.objects.delete(p.id);
+        if (this.particleManager) this.particleManager.stopEmitter(p.id + '_trail');
+        this.activeProjectiles.splice(i, 1);
+      }
     }
 
     if (!isFollowingPlayer && !this.isTransformDragging) {

@@ -319,6 +319,15 @@ export function getSocketsForNodeType(type: NodeType): { inputs: Socket[]; outpu
         ],
         outputs: [{ id: 'out_flow', name: 'Then', type: 'flow' }],
       };
+    case 'ShootProjectile':
+      return {
+        inputs: [
+          { id: 'in_flow', name: 'Shoot', type: 'flow' },
+          { id: 'in_speed', name: 'Vitesse (Speed)', type: 'number' },
+          { id: 'in_damage', name: 'Dégâts (Damage)', type: 'number' },
+        ],
+        outputs: [{ id: 'out_flow', name: 'Then', type: 'flow' }],
+      };
 
     // AI & NPC Navigation Nodes
     case 'FollowTarget':
@@ -544,6 +553,7 @@ export function createGraphNode(
   if (type === 'SpawnPrefab') title = 'Faire Apparaître';
   if (type === 'PrintLog') title = 'Afficher Message';
   if (type === 'CameraShake') title = 'Secousse Caméra';
+  if (type === 'ShootProjectile') title = 'Tirer un Projectile (Feu/Laser)';
 
   // AI & NPC Navigation
   if (type === 'FollowTarget') title = 'Suivre Cible (AI Follow)';
@@ -588,6 +598,11 @@ export function createGraphNode(
   if (type === 'Counter') {
     if (defaultValues.step === undefined) defaultValues.step = 1;
     if (defaultValues.current === undefined) defaultValues.current = 0;
+  }
+  if (type === 'ShootProjectile') {
+    if (defaultValues.speed === undefined) defaultValues.speed = 25;
+    if (defaultValues.damage === undefined) defaultValues.damage = 10;
+    if (defaultValues.prefabId === undefined) defaultValues.prefabId = 'Fireball';
   }
   if (type === 'Delay' && defaultValues.duration === undefined) defaultValues.duration = 1.0;
   if (type === 'OnTimer' && defaultValues.interval === undefined) defaultValues.interval = 1.0;
