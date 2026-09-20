@@ -41,10 +41,12 @@ import {
 } from 'lucide-react';
 import { BehaviorCardsInspector } from './BehaviorCardsInspector';
 import { CustomScriptEditor } from './CustomScriptEditor';
+import { RigStudioModal } from './RigStudioModal';
 import {
   EntityLogicData,
   NodeGraphData,
 } from '../types/logic';
+import { RigAnimData } from '../types/engine';
 
 interface InspectorProps {
   selectedNode: SceneNode | null;
@@ -61,6 +63,8 @@ interface InspectorProps {
   onFocusObject: (id: string) => void;
   onDuplicateObject: (id: string) => void;
   onDeleteObject: (id: string) => void;
+  onUpdateRigAnim?: (id: string, rig: Partial<RigAnimData>) => void;
+  onGetChildNames?: (id: string) => string[];
 }
 
 export const Inspector: React.FC<InspectorProps> = ({
@@ -78,10 +82,13 @@ export const Inspector: React.FC<InspectorProps> = ({
   onFocusObject,
   onDuplicateObject,
   onDeleteObject,
+  onUpdateRigAnim,
+  onGetChildNames,
 }) => {
   const [activeTab, setActiveTab] = useState<'properties' | 'physics' | 'logic'>('properties');
   const [uniformScale, setUniformScale] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+  const [isRigStudioOpen, setIsRigStudioOpen] = useState(false);
 
   if (!selectedNode) {
     return (
@@ -278,7 +285,28 @@ export default class CustomEntityScript extends Script {
             {copiedId ? <span className="text-emerald-400">Copié</span> : 'Copier'}
           </button>
         </div>
+
+        {(selectedNode.type === 'mesh' || selectedNode.type === 'group') && selectedNode.subType === 'model' && (
+          <button
+            onClick={() => setIsRigStudioOpen(true)}
+            className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-200 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md mt-2 ring-1 ring-indigo-500/20"
+          >
+            <Zap className="w-4 h-4 text-indigo-400 fill-indigo-400/20" />
+            <span>OUVRIR RIG STUDIO</span>
+          </button>
+        )}
       </div>
+
+      {isRigStudioOpen && (
+        <RigStudioModal
+          isOpen={isRigStudioOpen}
+          node={selectedNode}
+          onClose={() => setIsRigStudioOpen(false)}
+          onSave={(data) => onUpdateRigAnim?.(selectedNode.id, data)}
+          availableAnimations={selectedNode.modelInfo?.animations || []}
+          childNodeNames={onGetChildNames?.(selectedNode.id) || []}
+        />
+      )}
 
       {/* 3-Mode Segmented Tabs (Propriétés / Physique / Logique) */}
       <div className="grid grid-cols-3 gap-1 px-3.5 pt-2 pb-1 bg-zinc-950 border-b border-zinc-800/60">

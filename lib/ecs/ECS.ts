@@ -180,6 +180,8 @@ export class CharacterControllerComponent extends BaseComponent {
   public jumpForce: number = 8.5; // initial jump impulse velocity
   public isGrounded: boolean = true;
   public cameraDistance: number = 5.5;
+  public currentSpeed: number = 0;
+  public velocity: THREE.Vector3 = new THREE.Vector3();
 
   // Runtime kinematic controller handle
   public rawController: RAPIER.KinematicCharacterController | null = null;
@@ -238,6 +240,40 @@ export class ScriptComponent extends BaseComponent {
   constructor(onUpdate?: (entity: Entity, dt: number) => void) {
     super();
     this.onUpdate = onUpdate;
+  }
+}
+
+/**
+ * 8. RigAnim Component (Animation Mapping & Rigging metadata)
+ */
+import { RigAnimData } from '../../types/engine';
+export class RigAnimComponent extends BaseComponent {
+  readonly type = 'RigAnim';
+
+  public rigType: RigAnimData['rigType'] = 'biped';
+  public mapping: RigAnimData['animationMapping'] = {};
+  public autoAnimate: boolean = true;
+  public vehicleWheels: RigAnimData['vehicleWheels'] = {};
+
+  constructor(data?: Partial<RigAnimData>) {
+    super();
+    if (data) {
+      if (data.enabled !== undefined) this.enabled = data.enabled;
+      if (data.rigType !== undefined) this.rigType = data.rigType;
+      if (data.animationMapping !== undefined) this.mapping = data.animationMapping;
+      if (data.autoAnimate !== undefined) this.autoAnimate = data.autoAnimate;
+      if (data.vehicleWheels !== undefined) this.vehicleWheels = data.vehicleWheels;
+    }
+  }
+
+  public toData(): RigAnimData {
+    return {
+      enabled: this.enabled,
+      rigType: this.rigType,
+      animationMapping: this.mapping,
+      autoAnimate: this.autoAnimate,
+      vehicleWheels: this.vehicleWheels,
+    };
   }
 }
 

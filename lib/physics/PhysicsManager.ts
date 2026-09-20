@@ -590,6 +590,10 @@ export class PhysicsManager {
     body.setNextKinematicTranslation(newPos);
     obj.position.set(newPos.x, newPos.y, newPos.z);
 
+    // Update current speed for animations
+    controllerComp.velocity.set(correctedMovement.x / dt, 0, correctedMovement.z / dt);
+    controllerComp.currentSpeed = Math.sqrt(controllerComp.velocity.x ** 2 + controllerComp.velocity.z ** 2);
+
     // Update Camera Follow
     this.characterSystem.update(dt, [playerEntity]);
   }
@@ -611,6 +615,10 @@ export class PhysicsManager {
       const vehicleData = entity.object3D!.userData.physics.vehicleController;
       this.vehicleSystem.update(dt, entity, vehicleData, new Map());
     }
+  }
+
+  public getEntityRigidbody(entityId: string): RAPIER.RigidBody | undefined {
+    return this.entityToBody.get(entityId);
   }
 
   /**

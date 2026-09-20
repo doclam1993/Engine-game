@@ -139,6 +139,32 @@ export interface ModelInfo {
   meshCount: number;
   fileSize?: string;
   originalName?: string;
+  animations?: string[];
+}
+
+export interface RigAnimData {
+  enabled: boolean;
+  rigType: 'biped' | 'quadruped' | 'vehicle' | 'custom';
+  animationMapping: {
+    idle?: string;
+    walk?: string;
+    run?: string;
+    sprint?: string;
+    jump?: string;
+    crouch?: string;
+    attack?: string;
+    interact?: string;
+    hit?: string;
+    wave?: string;
+    die?: string;
+  };
+  autoAnimate: boolean; // Transitions based on speed
+  vehicleWheels?: {
+    frontLeft?: string;
+    frontRight?: string;
+    rearLeft?: string;
+    rearRight?: string;
+  };
 }
 
 export interface SceneNode {
@@ -169,6 +195,7 @@ export interface SceneNode {
   physics?: PhysicsNodeData;
   logic?: EntityLogicData;
   particles?: ParticleEmitterData;
+  rigAnim?: RigAnimData;
   childrenCount?: number;
   modelInfo?: ModelInfo;
 }

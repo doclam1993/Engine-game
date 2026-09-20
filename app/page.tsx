@@ -41,6 +41,7 @@ import {
   MaterialData,
   LightData,
   PhysicsNodeData,
+  RigAnimData,
   SceneExportData,
   WorkPlaneConfig,
   DEFAULT_WORK_PLANE_CONFIG,
@@ -223,6 +224,12 @@ export default function AetherStudioPage() {
 
   const handleUpdateLogic = useCallback((id: string, logic: Partial<EntityLogicData>) => {
     sceneManagerRef.current?.updateLogic(id, logic);
+  }, []);
+
+  const handleUpdateRigAnim = useCallback((id: string, rig: Partial<RigAnimData>) => {
+    sceneManagerRef.current?.setRigAnim(id, rig);
+    const updatedNodes = sceneManagerRef.current?.getSceneHierarchy() || [];
+    setNodes(updatedNodes);
   }, []);
 
   const handleOpenNodeGraph = useCallback((node: SceneNode, initialGraph?: NodeGraphData) => {
@@ -501,6 +508,8 @@ export default function AetherStudioPage() {
           onUpdateLight={handleUpdateLight}
           onUpdatePhysics={handleUpdatePhysics}
           onUpdateLogic={handleUpdateLogic}
+          onUpdateRigAnim={handleUpdateRigAnim}
+          onGetChildNames={(id) => sceneManagerRef.current?.getChildNames(id) || []}
           onOpenNodeGraph={handleOpenNodeGraph}
           onOpenTimeline={handleOpenTimeline}
           onUpdateName={handleRenameNode}

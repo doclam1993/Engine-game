@@ -12,6 +12,7 @@ import {
   MaterialData,
   LightData,
   PhysicsNodeData,
+  RigAnimData,
   EngineEvents,
   EngineStats,
   ModelInfo,
@@ -38,12 +39,13 @@ import {
   RigidbodyComponent,
   ColliderComponent,
   CharacterControllerComponent,
+  RigAnimComponent,
   Entity,
 } from './ecs/ECS';
 import { PhysicsSystem } from './ecs/PhysicsSystem';
 import { PhysicsManager } from './physics/PhysicsManager';
 import { LogicExecutor } from './logic/LogicExecutor';
-import { EntityLogicData } from '../types/logic';
+import { EntityLogicData, GraphNodeData } from '../types/logic';
 import { AtmosphereManager } from './atmosphere/AtmosphereManager';
 import { TerrainGenerator } from './terrain/TerrainGenerator';
 import { FoliagePainter } from './terrain/FoliagePainter';
@@ -160,7 +162,13 @@ export class SceneManager {
     });
 
     // Initialize GLTF & DRACO loader
-    this.gltfLoader = new GLTFLoader();
+    const loadingManager = new THREE.LoadingManager();
+    loadingManager.onError = (url) => {
+      console.error(`Erreur de chargement de ressource: ${url}`);
+      this.events.onModelImportError?.(`Ressource manquante: ${url.split('/').pop()}. Utilisez le format .GLB pour inclure toutes les textures.`);
+    };
+
+    this.gltfLoader = new GLTFLoader(loadingManager);
     try {
       this.dracoLoader = new DRACOLoader();
       this.dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
@@ -1632,8 +1640,9 @@ export class SceneManager {
     const animations = obj.userData.animations as THREE.AnimationClip[];
     if (!animations || animations.length === 0) return;
 
-    // Find the requested animation or default to the first one
-    const clip = animations.find((a) => a.name === animationName) || animations[0];
+    // Find the requested animation
+    const clip = animations.find((a) => a.name === animationName);
+    if (!clip) return;
     
     let mixer = this.mixers.get(entityId);
     if (!mixer) {
@@ -1641,18 +1650,36 @@ export class SceneManager {
       this.mixers.set(entityId, mixer);
     }
 
-    mixer.stopAllAction();
     const action = mixer.clipAction(clip);
+    
+    // If this action is already playing, don't restart it
+    if (action.isRunning() && mixer.timeScale > 0) return;
+
+    // Log for debugging in sandbox
+    if (this.isPlaying) {
+      console.log(`[RigStudio] Playing animation: ${animationName} on ${obj.name}`);
+    }
+
+    // Fade out other actions and fade in this one
+    mixer.stopAllAction();
     action.reset();
     action.setLoop(THREE.LoopRepeat, Infinity);
-    action.fadeIn(0.2);
+    action.setEffectiveTimeScale(1);
+    action.setEffectiveWeight(1);
+    action.fadeIn(0.25);
     action.play();
   }
 
   public stopSkeletalAnimations(entityId: string): void {
     const mixer = this.mixers.get(entityId);
     if (mixer) {
-      mixer.stopAllAction();
+      // Instead of stopping abruptly, fade out all actions
+      const actions = (mixer as any)._actions || [];
+      actions.forEach((action: THREE.AnimationAction) => {
+        if (action.isRunning()) {
+          action.fadeOut(0.25);
+        }
+      });
     }
   }
 
@@ -1725,6 +1752,15 @@ export class SceneManager {
         bytes > 1048576
           ? `${(bytes / 1048576).toFixed(2)} MB`
           : `${(bytes / 1024).toFixed(1)} KB`;
+      
+      // Proactive check for multi-file GLTF
+      if (source.name.toLowerCase().endsWith('.gltf')) {
+        const text = new TextDecoder().decode(arrayBuffer.slice(0, 2000));
+        if (text.includes('"uri":') && !text.includes('data:application/octet-stream;base64')) {
+          console.warn('Fichier .gltf détecté avec références externes. Les textures risquent de manquer.');
+          this.events.onModelImportError?.('Format .gltf détecté. Pour les modèles avec textures, préférez le format .GLB (binaire) qui embarque tout dans un seul fichier.');
+        }
+      }
     } else {
       arrayBuffer = source;
       fileSizeStr = `${(arrayBuffer.byteLength / 1024).toFixed(1)} KB`;
@@ -1820,6 +1856,7 @@ export class SceneManager {
             meshCount,
             fileSize: fileSizeStr,
             originalName: fileName,
+            animations: gltf.animations.map(a => a.name),
           };
 
           modelWrapper.userData = {
@@ -2674,6 +2711,17 @@ export class SceneManager {
       logic = JSON.parse(JSON.stringify(obj.userData.logic));
     }
 
+    let rigAnim: RigAnimData | undefined = undefined;
+    if (obj.userData?.rigAnim) {
+      rigAnim = JSON.parse(JSON.stringify(obj.userData.rigAnim));
+    } else {
+      const entity = this.ecsWorld.getEntity(obj.uuid);
+      const rigComp = entity?.getComponent<RigAnimComponent>('RigAnim');
+      if (rigComp) {
+        rigAnim = rigComp.toData();
+      }
+    }
+
     return {
       id: obj.uuid,
       name: obj.name || 'Unnamed',
@@ -2695,9 +2743,20 @@ export class SceneManager {
       light,
       physics,
       logic,
+      rigAnim,
       childrenCount: obj.children.length,
       modelInfo: obj.userData?.modelInfo,
     };
+  }
+
+  public getSceneHierarchy(): SceneNode[] {
+    const nodes: SceneNode[] = [];
+    this.scene.children.forEach((obj) => {
+      if (this.objects.has(obj.uuid)) {
+        nodes.push(this.toSceneNode(obj));
+      }
+    });
+    return nodes;
   }
 
   private notifyHierarchy(): void {
@@ -2798,6 +2857,11 @@ export class SceneManager {
     // Update skeletal animations
     this.mixers.forEach((mixer) => mixer.update(dt));
 
+    // Update Rigging Systems (Auto-animations, Vehicles)
+    if (this.isPlaying) {
+      this.updateRigSystems(dt);
+    }
+
     // Update projectiles
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const p = this.activeProjectiles[i];
@@ -2824,6 +2888,145 @@ export class SceneManager {
       this.renderer.render(this.scene, this.camera);
     }
   };
+
+  public setRigAnim(id: string, data: Partial<RigAnimData>): void {
+    const entity = this.ecsWorld.getEntity(id);
+    if (!entity) return;
+
+    let rigComp = entity.getComponent<RigAnimComponent>('RigAnim');
+    if (!rigComp) {
+      rigComp = new RigAnimComponent(data);
+      entity.addComponent(rigComp);
+    } else {
+      if (data.enabled !== undefined) rigComp.enabled = data.enabled;
+      if (data.rigType !== undefined) rigComp.rigType = data.rigType;
+      if (data.animationMapping !== undefined) rigComp.mapping = data.animationMapping;
+      if (data.autoAnimate !== undefined) rigComp.autoAnimate = data.autoAnimate;
+      if (data.vehicleWheels !== undefined) rigComp.vehicleWheels = data.vehicleWheels;
+    }
+
+    // Update object userData for export
+    const obj = this.objects.get(id);
+    if (obj) {
+      obj.userData.rigAnim = rigComp.toData();
+    }
+  }
+
+  private updateRigSystems(dt: number): void {
+    const entities = this.ecsWorld.getAllEntities();
+    for (const entity of entities) {
+      if (!entity.active || !entity.object3D) continue;
+
+      const rigComp = entity.getComponent<RigAnimComponent>('RigAnim');
+      if (!rigComp || !rigComp.enabled) continue;
+
+      // 1. Automated Skeletal Animations
+      if (rigComp.autoAnimate && (rigComp.rigType === 'biped' || rigComp.rigType === 'quadruped')) {
+        this.handleAutoAnimation(entity, rigComp, dt);
+      }
+
+      // 2. Vehicle Rigging (Wheels rotation)
+      if (rigComp.rigType === 'vehicle' && rigComp.vehicleWheels) {
+        this.handleVehicleRigging(entity, rigComp, dt);
+      }
+    }
+  }
+
+  private handleAutoAnimation(entity: Entity, rigComp: RigAnimComponent, dt: number): void {
+    const body = this.physicsManager.getEntityRigidbody(entity.id);
+    let speed = 0;
+    let isGrounded = true;
+
+    // Check physics for speed
+    if (body) {
+      const vel = body.linvel();
+      speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+    }
+
+    // Check character controller for grounded state and speed override
+    const charComp = entity.getComponent<CharacterControllerComponent>('CharacterController');
+    if (charComp) {
+      isGrounded = charComp.isGrounded ?? true;
+      if (charComp.currentSpeed > 0) {
+        speed = charComp.currentSpeed;
+      }
+    }
+
+    const mapping = rigComp.mapping;
+    let targetAnim = mapping.idle;
+
+    if (!isGrounded && mapping.jump) {
+      targetAnim = mapping.jump;
+    } else if (speed > 8.0 && mapping.sprint) {
+      targetAnim = mapping.sprint;
+    } else if (speed > 4.5 && mapping.run) {
+      targetAnim = mapping.run;
+    } else if (speed > 0.1 && mapping.walk) {
+      targetAnim = mapping.walk;
+    }
+
+    if (targetAnim && targetAnim !== '') {
+      this.playSkeletalAnimation(entity.id, targetAnim);
+    } else {
+      // Fallback: stop animations or fade out if nothing is mapped
+      this.stopSkeletalAnimations(entity.id);
+    }
+  }
+
+  private handleVehicleRigging(entity: Entity, rigComp: RigAnimComponent, dt: number): void {
+    const wheels = rigComp.vehicleWheels;
+    if (!wheels) return;
+
+    const body = this.physicsManager.world?.getRigidBody(entity.id as any);
+    if (!body) return;
+
+    const vel = body.linvel();
+    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(entity.object3D!.quaternion);
+    const dot = new THREE.Vector3(vel.x, vel.y, vel.z).normalize().dot(forward);
+    const direction = dot > 0 ? 1 : -1;
+
+    // Wheel rotation speed (rough approximation based on speed)
+    const wheelCircumference = 2.0; // approx 2m
+    const rotationAmount = (speed / wheelCircumference) * Math.PI * 2 * dt * direction;
+
+    const findMesh = (name: string): THREE.Object3D | null => {
+      let found: THREE.Object3D | null = null;
+      entity.object3D!.traverse((child) => {
+        if (child.name === name) found = child;
+      });
+      return found;
+    };
+
+    const wheelNames = [wheels.frontLeft, wheels.frontRight, wheels.rearLeft, wheels.rearRight];
+    wheelNames.forEach((name) => {
+      if (!name) return;
+      const mesh = findMesh(name);
+      if (mesh) {
+        mesh.rotateX(rotationAmount);
+      }
+    });
+
+    // Front wheels steering (simulated visual)
+    const steerNames = [wheels.frontLeft, wheels.frontRight];
+    const vehicleData = entity.object3D!.userData?.physics?.vehicleController;
+    if (vehicleData && vehicleData.enabled) {
+      // We could use current steering angle from vehicle system if exposed
+      // For now, it's enough that they rotate
+    }
+  }
+
+  public getChildNames(id: string): string[] {
+    const obj = this.objects.get(id);
+    if (!obj) return [];
+    const names: Set<string> = new Set();
+    obj.traverse((child) => {
+      if (child.name && child !== obj) {
+        names.add(child.name);
+      }
+    });
+    return Array.from(names);
+  }
 
   public dispose(): void {
     if (this.animationFrameId !== null) {
